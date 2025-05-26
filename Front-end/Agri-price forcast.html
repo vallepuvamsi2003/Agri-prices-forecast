@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AgriPrice Forecast</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        /* Custom styles to mimic Tailwind's default font and add animations */
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        /* Basic fade-in animation */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in {
+            animation: fadeIn 0.5s ease-out forwards;
+        }
+
+        /* Spin animation for loader icon */
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        .animate-spin {
+            animation: spin 1s linear infinite;
+        }
+
+        /*
+           The following CSS that was hiding the native calendar picker has been removed.
+           This ensures that the default calendar icon and picker provided by the browser
+           for input type="date" are now visible and functional.
+        */
+    </style>
+</head>
+<body class="min-h-screen bg-gradient-to-br from-green-50 to-blue-100 text-gray-800 p-4 sm:p-6 lg:p-8">
+
+    <div class="max-w-7xl mx-auto bg-white shadow-xl rounded-2xl p-6 sm:p-8 lg:p-10 border border-gray-200">
+        <section class="text-center mb-10 pb-6 border-b border-gray-200">
+            <h2 class="text-3xl sm:text-4xl font-extrabold text-green-700 mb-4">
+                Welcome to AgriPrice Forecast!
+            </h2>
+            <p class="text-lg text-gray-700 leading-relaxed max-w-3xl mx-auto">
+                Your comprehensive platform for simulated AI-ML driven price forecasting and market insights for pulses and vegetables. Empowering farmers, traders, and consumers with timely information to make informed decisions in the dynamic agricultural market.
+            </p>
+        </section>
+
+        <header class="flex flex-col sm:flex-row justify-between items-center mb-8 pb-4 border-b border-gray-200">
+            <h1 class="text-4xl font-extrabold text-green-700 mb-4 sm:mb-0">
+                AgriPrice Forecast
+            </h1>
+            <nav class="flex space-x-4 text-lg font-medium text-gray-600">
+                <button id="nav-dashboard" class="pb-1 text-green-600 border-b-2 border-green-600 transition duration-200">
+                    Dashboard
+                </button>
+                <button id="nav-markets" class="pb-1 hover:text-green-600 transition duration-200">
+                    Markets
+                </button>
+                <button id="nav-analysis" class="pb-1 hover:text-green-600 transition duration-200">
+                    Analysis
+                </button>
+                <button id="nav-news" class="pb-1 hover:text-green-600 transition duration-200">
+                    News
+                </button>
+            </nav>
+        </header>
+
+        <main id="main-content" class="min-h-[600px]">
+            </main>
+
+        <div id="error-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+            <div class="bg-white p-8 rounded-lg shadow-2xl max-w-md w-full text-center border border-red-300">
+                <div class="flex items-center justify-center mb-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-10 w-10 text-red-500">
+                        <circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" />
+                    </svg>
+                </div>
+                <h3 class="text-xl font-bold text-red-700 mb-4">Error</h3>
+                <p id="error-message" class="text-gray-700 mb-6"></p>
+                <button id="close-error-modal" class="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global state variables
+        let category = 'pulses';
+        let item = '';
+        let forecastDate = '';
+        let predictionPeriod = '1 Week';
+        let forecastResult = null;
+        let llmInsight = '';
+        let loadingForecast = false;
+        let loadingInsight = false;
+        let showError = false;
+        let errorMessage = '';
+        let chartData = [];
+        let currentPrices = [];
+        let loadingCurrentPrices = true;
+        let currentPage = 'dashboard';
+        let priceChart = null; // To hold the Chart.js instance
+
+        // Define pulses and vegetables with basePrice and volatility for local simulation
+        const pulses = [
+            { name: 'Toor Dal', basePrice: 90, volatility: 0.08 },
+            { name: 'Moong Dal', basePrice: 75, volatility: 0.06 },
+            { name: 'Masoor Dal', basePrice: 80, volatility: 0.07 },
+            { name: 'Chana Dal', basePrice: 65, volatility: 0.05 },
+        ];
+
+        const vegetables = [
+            { name: 'Potatoes', basePrice: 25, volatility: 0.15 },
+            { name: 'Onions', basePrice: 30, volatility: 0.20 },
+            { name: 'Tomatoes', basePrice: 40, volatility: 0.25 },
+            { name: 'Cabbage', basePrice: 20, volatility: 0.10 },
+        ];
+
+        // Map product names to distinct generic placeholder image URLs
+        const productImages = {
+            'Toor Dal': 'https://placehold.co/60x60/d4edda/28a745?text=Toor+Dal',
+            'Moong Dal': 'https://placehold.co/60x60/cce5ff/007bff?text=Moong+Dal',
+            'Masoor Dal': 'https://placehold.co/60x60/fff3cd/ffc107?text=Masoor+Dal',
+            'Chana Dal': 'https://placehold.co/60x60/f8d7da/dc3545?text=Chana+Dal',
+            'Potatoes': 'https://placehold.co/60x60/e2e3e5/6c757d?text=Potatoes',
+            'Onions': 'https://placehold.co/60x60/ffe0b2/ff9800?text=Onions',
+            'Tomatoes': 'https://placehold.co/60x60/ffcdd2/f44336?text=Tomatoes',
+            'Cabbage': 'https://placehold.co/60x60/d0f0c0/4caf50?text=Cabbage',
+        };
+
+        // Icon SVG functions (retained from React for simplicity)
+        const CalendarIcon = () => `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2V5" /><path d="M16 2V5" /><path d="M21 8V21a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z" /><path d="M3 12H21" /></svg>`;
+        const TrendingUpIcon = () => `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17" /><polyline points="16 7 22 7 22 13" /></svg>`;
+        const LoaderIcon = (className = "") => `<svg class="animate-spin ${className}" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>`;
+        const LineChartIcon = () => `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18" /><path d="m18 6-6 6-4-4-3 3" /></svg>`;
+        const InfoIcon = () => `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></svg>`;
+        const LightbulbIcon = () => `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 3c0 1.3.5 2.6 1.5 3.5.8.8 1.3 1.5 1.5 2.5" /><path d="M9 18h6" /><path d="M10 22h4" /><path d="M11 17v5" /></svg>`;
+        const DollarSignIcon = () => `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" x2="12" y1="2" y2="22" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></svg>`;
+        const BarChartIcon = () => `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" x2="12" y1="20" y2="10" /><line x1="18" x2="18" y1="20" y2="4" /><line x1="6" x2="6" y1="20" y2="16" /></svg>`;
+        const NewspaperIcon = () => `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h2" /><path d="M18 14h-8" /><path d="M18 18h-8" /><path d="M10 8h4" /></svg>`;
+
+
+        // Helper function to simulate LLM API call
+        async function getLLMInsight(item, forecastedPrice, predictionPeriod) {
+            const prompt = `Generate a very brief (2-3 sentences) market insight for ${item} with a forecasted price of ₹${forecastedPrice.toFixed(2)} for the next ${predictionPeriod}. Consider potential factors like seasonality, demand, supply chain, or recent market trends that might influence this price. Keep it general and concise, focusing on short-term outlook.`;
+
+            let chatHistory = [];
+            chatHistory.push({ role: "user", parts: [{ text: prompt }] });
+            const payload = { contents: chatHistory };
+            const apiKey = ""; // Canvas will provide this at runtime for frontend calls
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+            try {
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const result = await response.json();
+
+                if (result.candidates && result.candidates.length > 0 &&
+                    result.candidates[0].content && result.candidates[0].content.parts &&
+                    result.candidates[0].content.parts.length > 0) {
+                    return result.candidates[0].content.parts[0].text;
+                } else {
+                    console.error("LLM response structure unexpected:", result);
+                    return "No specific insights available at this time.";
+                }
+            } catch (error) {
+                console.error("Error calling LLM API:", error);
+                return "Failed to generate market insights due to an API error.";
+            }
+        }
+
+        // Simulate current market prices
+        function generateCurrentPrices() {
+            const allProduce = [...pulses, ...vegetables];
+            return allProduce.map(p => ({
+                item: p.name,
+                price: parseFloat((p.basePrice * (1 + (Math.random() - 0.5) * p.volatility * 0.5)).toFixed(2)),
+                imageUrl: productImages[p.name]
+            }));
+        }
+
+        // Generate simulated historical and forecast data for the chart
+        function generateChartData(selectedItem, selectedDate, period) {
+            if (!selectedItem || !selectedDate) return [];
+
+            const today = new Date();
+            const forecastDt = new Date(selectedDate);
+            const data = [];
+
+            // Simulate historical data for the past 30 days
+            for (let i = 30; i >= 0; i--) {
+                const date = new Date(today);
+                date.setDate(today.getDate() - i);
+                const price = selectedItem.basePrice * (1 + (Math.random() - 0.5) * selectedItem.volatility);
+                data.push({
+                    date: date.toISOString().split('T')[0],
+                    price: parseFloat(price.toFixed(2)),
+                    type: 'Historical'
+                });
+            }
+
+            // Determine forecast days based on predictionPeriod
+            let forecastDays = 0;
+            switch (period) {
+                case '1 Week':
+                    forecastDays = 7;
+                    break;
+                case '2 Weeks':
+                    forecastDays = 14;
+                    break;
+                case '1 Month':
+                    forecastDays = 30;
+                    break;
+                case '3 Months':
+                    forecastDays = 90;
+                    break;
+                default:
+                    forecastDays = 7;
+            }
+
+            // Simulate forecast data for the selected prediction period
+            const lastHistoricalPrice = data[data.length - 1].price;
+            for (let i = 0; i <= forecastDays; i++) {
+                const date = new Date(forecastDt);
+                date.setDate(forecastDt.getDate() + i);
+                // Simple linear trend for forecast, with some noise
+                const trendFactor = (forecastDt.getTime() - today.getTime()) / (1000 * 60 * 60 * 24 * 30); // Normalize by 30 days
+                const forecastPrice = lastHistoricalPrice * (1 + (trendFactor * 0.05) + (Math.random() - 0.5) * selectedItem.volatility * 0.5);
+                data.push({
+                    date: date.toISOString().split('T')[0],
+                    price: parseFloat(forecastPrice.toFixed(2)),
+                    type: 'Forecast'
+                });
+            }
+            return data;
+        }
+
+        // Function to simulate price forecasting and generate insights
+        async function simulateForecast() {
+            if (!item || !forecastDate) {
+                setErrorMessage("Please select an item and a forecast date.");
+                setShowError(true);
+                return;
+            }
+
+            loadingForecast = true;
+            loadingInsight = true;
+            setShowError(false);
+            forecastResult = null;
+            llmInsight = '';
+            chartData = [];
+            updateUI(); // Update UI to show loading states
+
+            const selectedProduceList = category === 'pulses' ? pulses : vegetables;
+            const selectedProduce = selectedProduceList.find(p => p.name === item);
+
+            if (!selectedProduce) {
+                setErrorMessage("Selected item not found.");
+                setShowError(true);
+                loadingForecast = false;
+                loadingInsight = false;
+                updateUI();
+                return;
+            }
+
+            const generatedData = generateChartData(selectedProduce, forecastDate, predictionPeriod);
+            chartData = generatedData;
+
+            // Find the forecasted price for the exact forecastDate
+            const specificForecastPoint = generatedData.find(d => d.date === forecastDate);
+            const finalForecastPrice = specificForecastPoint ? specificForecastPoint.price : generatedData[generatedData.length - 1].price; // Fallback to last forecast point
+
+            // Simulate network delay
+            await new Promise(resolve => setTimeout(resolve, 1500));
+
+            forecastResult = {
+                item: item,
+                date: forecastDate,
+                price: finalForecastPrice,
+                unit: '₹/kg',
+                trend: finalForecastPrice > selectedProduce.basePrice ? 'Upward' : 'Downward',
+                confidence: `${Math.floor(70 + Math.random() * 20)}%`
+            };
+            loadingForecast = false;
+            updateUI(); // Update UI after forecast
+
+            // Get LLM insight
+            const insight = await getLLMInsight(item, finalForecastPrice, predictionPeriod);
+            llmInsight = insight;
+            loadingInsight = false;
+            updateUI(); // Update UI after insight
+        }
+
+        function setShowError(value) {
+            showError = value;
+            document.getElementById('error-modal').classList.toggle('hidden', !showError);
+        }
+
+        function setErrorMessage(message) {
+            errorMessage = message;
+            document.getElementById('error-message').textContent = errorMessage;
+        }
+
+        function closeErrorModal() {
+            setShowError(false);
+            setErrorMessage('');
+        }
+
+        // Function to render the chart using Chart.js
+        function renderChart() {
+            const ctx = document.getElementById('priceChartCanvas');
+            if (!ctx) return; // Ensure canvas exists
+
+            // Destroy existing chart instance if it exists
+            if (priceChart) {
+                priceChart.destroy();
+            }
+
+            if (chartData.length === 0) {
+                ctx.style.display = 'none'; // Hide canvas if no data
+                return;
+            } else {
+                ctx.style.display = 'block'; // Show canvas if data exists
+            }
+
+            priceChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: chartData.map(d => new Date(d.date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })),
+                    datasets: [{
+                        label: 'Price (₹/kg)',
+                        data: chartData.map(d => d.price),
+                        borderColor: '#10B981', // Green-600
+                        backgroundColor: 'rgba(16, 185, 129, 0.2)',
+                        borderWidth: 2,
+                        pointRadius: 0, // Hide points by default
+                        pointHoverRadius: 6, // Show point on hover
+                        fill: false,
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const dataPoint = chartData[context.dataIndex];
+                                    return `Price: ₹${context.raw.toFixed(2)} (${dataPoint.type})`;
+                                },
+                                title: function(context) {
+                                    return new Date(chartData[context[0].dataIndex].date).toLocaleDateString('en-IN', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Date'
+                            },
+                            grid: {
+                                display: false
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'Price (₹/kg)'
+                            },
+                            beginAtZero: false
+                        }
+                    }
+                }
+            });
+        }
+
+
+        // Function to update the main content based on currentPage
+        function renderContent() {
+            const mainContentDiv = document.getElementById('main-content');
+            let html = '';
+
+            switch (currentPage) {
+                case 'dashboard':
+                    const selectedProduceList = category === 'pulses' ? pulses : vegetables;
+                    const itemOptions = selectedProduceList.map(p => `<option value="${p.name}" ${item === p.name ? 'selected' : ''}>${p.name}</option>`).join('');
+
+                    html = `
+                        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                            <div class="lg:col-span-1 bg-gray-50 p-6 rounded-xl shadow-inner border border-gray-100">
+                                <h2 class="text-2xl font-bold text-gray-800 mb-6">Price Prediction Tool</h2>
+
+                                <div class="mb-6">
+                                    <label for="category-select" class="block text-sm font-medium text-gray-700 mb-2">
+                                        Select Category
+                                    </label>
+                                    <select id="category-select" class="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-green-500 focus:border-green-500 transition duration-200 ease-in-out bg-white text-gray-800">
+                                        <option value="pulses" ${category === 'pulses' ? 'selected' : ''}>Pulses</option>
+                                        <option value="vegetables" ${category === 'vegetables' ? 'selected' : ''}>Vegetables</option>
+                                    </select>
+                                </div>
+
+                                <div class="mb-6">
+                                    <label for="item-select" class="block text-sm font-medium text-gray-700 mb-2">
+                                        Select Commodity
+                                    </label>
+                                    <select id="item-select" class="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-green-500 focus:border-green-500 transition duration-200 ease-in-out bg-white text-gray-800">
+                                        ${itemOptions}
+                                    </select>
+                                </div>
+
+                                <div class="mb-6">
+                                    <label for="forecastDate-input" class="block text-sm font-medium text-gray-700 mb-2">
+                                        Forecast Start Date
+                                    </label>
+                                    <div class="relative">
+                                        <input type="date" id="forecastDate-input" value="${forecastDate}" class="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-green-500 focus:border-green-500 transition duration-200 ease-in-out pr-10 bg-white text-gray-800" />
+                                        <div class="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                                            ${CalendarIcon()}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="mb-8">
+                                    <label for="predictionPeriod-select" class="block text-sm font-medium text-gray-700 mb-2">
+                                        Prediction Period
+                                    </label>
+                                    <select id="predictionPeriod-select" class="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-green-500 focus:border-green-500 transition duration-200 ease-in-out bg-white text-gray-800">
+                                        <option value="1 Week" ${predictionPeriod === '1 Week' ? 'selected' : ''}>1 Week</option>
+                                        <option value="2 Weeks" ${predictionPeriod === '2 Weeks' ? 'selected' : ''}>2 Weeks</option>
+                                        <option value="1 Month" ${predictionPeriod === '1 Month' ? 'selected' : ''}>1 Month</option>
+                                        <option value="3 Months" ${predictionPeriod === '3 Months' ? 'selected' : ''}>3 Months</option>
+                                    </select>
+                                </div>
+
+                                <button id="generate-forecast-btn" class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-4 rounded-lg shadow-md transition duration-300 ease-in-out flex items-center justify-center space-x-2 transform hover:scale-105 ${loadingForecast || loadingInsight ? 'opacity-50 cursor-not-allowed' : ''}" ${loadingForecast || loadingInsight ? 'disabled' : ''}>
+                                    ${loadingForecast ? `
+                                        ${LoaderIcon('h-5 w-5')}
+                                        <span>Generating Prediction...</span>
+                                    ` : `
+                                        ${TrendingUpIcon()}
+                                        <span>Generate Price Prediction</span>
+                                    `}
+                                </button>
+                            </div>
+
+                            <div class="lg:col-span-2 space-y-8">
+                                <div class="p-6 bg-yellow-50 border border-yellow-200 rounded-xl shadow-inner animate-fade-in">
+                                    <h2 class="text-xl font-bold text-yellow-800 mb-4 flex items-center">
+                                        ${DollarSignIcon()}
+                                        Current Market Prices (Simulated)
+                                    </h2>
+                                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                        ${loadingCurrentPrices ? `
+                                            <div class="col-span-full text-center text-gray-500 flex items-center justify-center py-4">
+                                                ${LoaderIcon('h-5 w-5 mr-2')}
+                                                <span>Loading current prices...</span>
+                                            </div>
+                                        ` : currentPrices.length > 0 ? `
+                                            ${currentPrices.map((data, index) => `
+                                                <div class="flex justify-between items-center bg-yellow-100 p-3 rounded-lg">
+                                                    <span class="font-medium text-gray-700">${data.item}</span>
+                                                    <span class="font-semibold text-yellow-700">₹${data.price.toFixed(2)}/kg</span>
+                                                </div>
+                                            `).join('')}
+                                        ` : `
+                                            <div class="col-span-full text-center text-gray-500">No current price data available.</div>
+                                        `}
+                                    </div>
+                                </div>
+
+                                <div class="p-6 bg-blue-50 border border-blue-200 rounded-xl shadow-inner h-96 flex flex-col">
+                                    <h2 class="text-xl font-bold text-blue-800 mb-4 flex items-center">
+                                        ${LineChartIcon()}
+                                        Price Trend (Historical & Forecast)
+                                    </h2>
+                                    ${loadingForecast ? `
+                                        <div class="flex items-center justify-center h-full text-blue-600">
+                                            ${LoaderIcon('h-8 w-8 mr-3')}
+                                            <span>Loading chart data...</span>
+                                        </div>
+                                    ` : chartData.length > 0 ? `
+                                        <div style="width: 100%; height: 100%;"><canvas id="priceChartCanvas"></canvas></div>
+                                    ` : `
+                                        <div class="flex items-center justify-center h-full text-gray-500">
+                                            ${InfoIcon()}
+                                            <span>Select an item and date, then click 'Generate Price Prediction' to see the trend.</span>
+                                        </div>
+                                    `}
+                                </div>
+
+                                ${forecastResult ? `
+                                    <div class="p-6 bg-green-50 border border-green-200 rounded-xl shadow-inner animate-fade-in">
+                                        <h2 class="text-xl font-bold text-green-800 mb-4 flex items-center">
+                                            ${TrendingUpIcon()}
+                                            Forecast Summary for ${forecastResult.item}
+                                        </h2>
+                                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                            <div>
+                                                <p class="text-lg text-gray-700">
+                                                    <span class="font-semibold">Forecast Date:</span> ${forecastResult.date}
+                                                </p>
+                                                <p class="text-4xl font-extrabold text-green-700 mt-2">
+                                                    ₹${forecastResult.price.toFixed(2)} <span class="text-lg font-normal text-gray-600">${forecastResult.unit}</span>
+                                                </p>
+                                            </div>
+                                            <div>
+                                                <p class="text-lg text-gray-700">
+                                                    <span class="font-semibold">Trend:</span> ${forecastResult.trend}
+                                                </p>
+                                                <p class="text-lg text-gray-700 mt-2">
+                                                    <span class="font-semibold">Confidence:</span> ${forecastResult.confidence}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ` : ''}
+
+                                <div class="p-6 bg-purple-50 border border-purple-200 rounded-xl shadow-inner">
+                                    <h2 class="text-xl font-bold text-purple-800 mb-4 flex items-center">
+                                        ${LightbulbIcon()}
+                                        Market Insights
+                                    </h2>
+                                    ${loadingInsight ? `
+                                        <div class="flex items-center justify-center py-4 text-purple-600">
+                                            ${LoaderIcon('h-6 w-6 mr-2')}
+                                            <span>Generating insights...</span>
+                                        </div>
+                                    ` : llmInsight ? `
+                                        <p class="text-md text-gray-700">${llmInsight}</p>
+                                    ` : `
+                                        <p class="text-md text-gray-500">Market insights will appear here after generating a price prediction.</p>
+                                    `}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    break;
+                case 'markets':
+                    html = `
+                        <div class="space-y-8">
+                            <h2 class="text-3xl font-bold text-gray-800 mb-6 flex items-center">
+                                ${DollarSignIcon()}
+                                Current Market Overview
+                            </h2>
+                            <p class="text-lg text-gray-700 mb-6">
+                                Explore the latest simulated market prices for various agricultural commodities. These prices are updated frequently to reflect dynamic market conditions.
+                            </p>
+                            <div class="p-6 bg-yellow-50 border border-yellow-200 rounded-xl shadow-inner">
+                                <h3 class="text-xl font-bold text-yellow-800 mb-4 flex items-center">
+                                    ${DollarSignIcon()}
+                                    Live Commodity Prices (Simulated)
+                                </h3>
+                                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                    ${loadingCurrentPrices ? `
+                                        <div class="col-span-full text-center text-gray-500 flex items-center justify-center py-4">
+                                            ${LoaderIcon('h-5 w-5 mr-2')}
+                                            <span>Loading current prices...</span>
+                                        </div>
+                                    ` : currentPrices.length > 0 ? `
+                                        ${currentPrices.map((data, index) => `
+                                            <div class="flex items-center bg-yellow-100 p-3 rounded-lg shadow-sm">
+                                                <img src="${data.imageUrl}" alt="${data.item}" class="w-12 h-12 rounded-full object-cover mr-4 border border-yellow-300" />
+                                                <div class="flex-grow">
+                                                    <span class="font-medium text-gray-700 block">${data.item}</span>
+                                                    <span class="font-semibold text-yellow-700">₹${data.price.toFixed(2)}/kg</span>
+                                                </div>
+                                            </div>
+                                        `).join('')}
+                                    ` : `
+                                        <div class="col-span-full text-center text-gray-500">No current price data available.</div>
+                                    `}
+                                </div>
+                            </div>
+                            <div class="p-6 bg-blue-50 border border-blue-200 rounded-xl shadow-inner">
+                                <h3 class="text-xl font-bold text-blue-800 mb-4 flex items-center">
+                                    ${LineChartIcon()}
+                                    General Market Trends
+                                </h3>
+                                <p class="text-md text-gray-700">
+                                    Overall agricultural markets are showing mixed signals. Pulses are experiencing slight upward pressure due to recent demand spikes, while some vegetables might see seasonal price adjustments. Keep an eye on weather patterns as they remain a key factor.
+                                </p>
+                            </div>
+                        </div>
+                    `;
+                    break;
+                case 'analysis':
+                    html = `
+                        <div class="space-y-8">
+                            <h2 class="text-3xl font-bold text-gray-800 mb-6 flex items-center">
+                                ${BarChartIcon()}
+                                In-depth Market Analysis
+                            </h2>
+                            <p class="text-lg text-gray-700 mb-6">
+                                Dive deeper into our simulated analytical reports. Our AI-driven analysis provides insights into historical price movements, seasonal patterns, and potential future trends.
+                            </p>
+                            <div class="p-6 bg-indigo-50 border border-indigo-200 rounded-xl shadow-inner">
+                                <h3 class="text-xl font-bold text-indigo-800 mb-4">Seasonal Price Patterns (Simulated)</h3>
+                                <p class="text-md text-gray-700 mb-4">
+                                    Historically, prices for certain vegetables like tomatoes tend to peak during the monsoon season due to supply chain disruptions, while pulses often see price stability post-harvest.
+                                </p>
+                                <ul class="list-disc list-inside text-gray-700 space-y-2">
+                                    <li>Detailed reports on commodity-specific price drivers.</li>
+                                    <li>Correlation analysis with weather data and global events.</li>
+                                    <li>Long-term outlooks and strategic recommendations.</li>
+                                </ul>
+                            </div>
+                            <div class="p-6 bg-indigo-50 border border-indigo-200 rounded-xl shadow-inner">
+                                <h3 class="text-xl font-bold text-indigo-800 mb-4">Expert Opinions (Simulated)</h3>
+                                <p class="text-md text-gray-700">
+                                    "We anticipate a moderate increase in pulse prices over the next quarter, primarily driven by export demand and a slight reduction in cultivation area." - <em>Agri Economist, Dr. Sharma</em>
+                                </p>
+                            </div>
+                        </div>
+                    `;
+                    break;
+                case 'news':
+                    html = `
+                        <div class="space-y-8">
+                            <h2 class="text-3xl font-bold text-gray-800 mb-6 flex items-center">
+                                ${NewspaperIcon()}
+                                Latest Agricultural News
+                            </h2>
+                            <p class="text-lg text-gray-700 mb-6">
+                                Stay informed with the most recent simulated news and updates impacting agricultural markets.
+                            </p>
+                            <div class="p-6 bg-red-50 border border-red-200 rounded-xl shadow-inner">
+                                <h3 class="text-xl font-bold text-red-800 mb-4">Headline: Government Announces New Support Scheme for Farmers</h3>
+                                <p class="text-md text-gray-700 mb-2">
+                                    A new scheme aimed at boosting crop yields and providing financial aid to farmers has been unveiled, potentially influencing future supply and prices.
+                                </p>
+                                <span class="text-sm text-gray-500">Published: May 20, 2025</span>
+                            </div>
+                            <div class="p-6 bg-red-50 border border-red-200 rounded-xl shadow-inner">
+                                <h3 class="text-xl font-bold text-red-800 mb-4">Headline: Unexpected Rainfall Boosts Rabi Crop Outlook</h3>
+                                <p class="text-md text-gray-700 mb-2">
+                                    Recent unseasonal rains in key agricultural regions have positively impacted the Rabi crop, leading to expectations of higher yields.
+                                </p>
+                                <span class="text-sm text-gray-500">Published: May 18, 2025</span>
+                            </div>
+                            <div class="p-6 bg-red-50 border border-red-200 rounded-xl shadow-inner">
+                                <h3 class="text-xl font-bold text-red-800 mb-4">Headline: Global Pulse Prices See Marginal Dip Amidst Increased Supply</h3>
+                                <p class="text-md text-gray-700 mb-2">
+                                    International markets are reporting a slight decrease in pulse prices, influenced by robust harvests in major exporting countries.
+                                </p>
+                                <span class="text-sm text-gray-500">Published: May 15, 2025</span>
+                            </div>
+                        </div>
+                    `;
+                    break;
+            }
+            mainContentDiv.innerHTML = html;
+
+            // After rendering, re-attach event listeners for the current page
+            attachEventListeners();
+
+            // Special handling for chart on dashboard page
+            if (currentPage === 'dashboard' && !loadingForecast && chartData.length > 0) {
+                renderChart();
+            } else if (currentPage === 'dashboard' && (loadingForecast || chartData.length === 0)) {
+                // If chart is not to be rendered, ensure canvas is cleared/hidden
+                const canvasContainer = document.getElementById('priceChartCanvas');
+                if (canvasContainer) {
+                    if (priceChart) {
+                        priceChart.destroy();
+                        priceChart = null;
+                    }
+                    canvasContainer.style.display = 'none'; // Hide canvas
+                }
+            }
+        }
+
+        // Function to update UI elements based on state
+        function updateUI() {
+            renderContent();
+            // Update navigation button active states
+            document.querySelectorAll('nav button').forEach(button => {
+                if (button.id === `nav-${currentPage}`) {
+                    button.classList.add('text-green-600', 'border-b-2', 'border-green-600');
+                    button.classList.remove('hover:text-green-600');
+                } else {
+                    button.classList.remove('text-green-600', 'border-b-2', 'border-green-600');
+                    button.classList.add('hover:text-green-600');
+                }
+            });
+
+            // Update error modal visibility
+            document.getElementById('error-modal').classList.toggle('hidden', !showError);
+            document.getElementById('error-message').textContent = errorMessage;
+        }
+
+        // Function to attach event listeners to dynamically created elements
+        function attachEventListeners() {
+            // Navigation buttons
+            document.getElementById('nav-dashboard').onclick = () => { currentPage = 'dashboard'; updateUI(); };
+            document.getElementById('nav-markets').onclick = () => { currentPage = 'markets'; updateUI(); };
+            document.getElementById('nav-analysis').onclick = () => { currentPage = 'analysis'; updateUI(); };
+            document.getElementById('nav-news').onclick = () => { currentPage = 'news'; updateUI(); };
+
+            // Dashboard controls (only if on dashboard page)
+            if (currentPage === 'dashboard') {
+                const categorySelect = document.getElementById('category-select');
+                if (categorySelect) {
+                    categorySelect.onchange = (e) => {
+                        category = e.target.value;
+                        // Set default item when category changes
+                        if (category === 'pulses' && pulses.length > 0) {
+                            item = pulses[0].name;
+                        } else if (category === 'vegetables' && vegetables.length > 0) {
+                            item = vegetables[0].name;
+                        }
+                        updateUI();
+                    };
+                }
+
+                const itemSelect = document.getElementById('item-select');
+                if (itemSelect) {
+                    itemSelect.onchange = (e) => {
+                        item = e.target.value;
+                        updateUI();
+                    };
+                }
+
+                const forecastDateInput = document.getElementById('forecastDate-input');
+                if (forecastDateInput) {
+                    forecastDateInput.onchange = (e) => {
+                        forecastDate = e.target.value;
+                        updateUI();
+                    };
+                }
+
+                const predictionPeriodSelect = document.getElementById('predictionPeriod-select');
+                if (predictionPeriodSelect) {
+                    predictionPeriodSelect.onchange = (e) => {
+                        predictionPeriod = e.target.value;
+                        updateUI();
+                    };
+                }
+
+                const generateForecastBtn = document.getElementById('generate-forecast-btn');
+                if (generateForecastBtn) {
+                    generateForecastBtn.onclick = simulateForecast;
+                }
+            }
+
+            // Close error modal button
+            const closeErrorModalBtn = document.getElementById('close-error-modal');
+            if (closeErrorModalBtn) {
+                closeErrorModalBtn.onclick = closeErrorModal;
+            }
+        }
+
+        // Initial setup when the DOM is fully loaded
+        document.addEventListener('DOMContentLoaded', () => {
+            // Set initial item based on default category
+            if (category === 'pulses' && pulses.length > 0) {
+                item = pulses[0].name;
+            } else if (category === 'vegetables' && vegetables.length > 0) {
+                item = vegetables[0].name;
+            }
+
+            // Simulate current prices once on load
+            currentPrices = generateCurrentPrices();
+            loadingCurrentPrices = false;
+
+            // Initial UI render
+            updateUI();
+        });
+    </script>
+</body>
+</html>
